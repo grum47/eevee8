@@ -1,41 +1,58 @@
-from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 import json
 
+from working_hours import working_hours_buttons, time_work_func, get_today_last_event, get_today_working_hours
+from func import write_log
 
 with open("./eevee8/config.json") as conf:
     data = json.loads(conf.read())
     token = data['token']
 
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
+
+# Определяем логику команды /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     keyboard = [
-        [
-            KeyboardButton("Тренировки"),
-            KeyboardButton("Учет рабочего времени")
-            ],
-        [
-            KeyboardButton("Статистика по курсу доллара"),
-            KeyboardButton("ФУНКЦИЯ")
-            ]
+        [InlineKeyboardButton("Учет рабочего времени", callback_data='working_hours'),
+         InlineKeyboardButton("Тренировка", callback_data='training')]
     ]
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    await update.message.reply_text('Выберите опцию', reply_markup=reply_markup) # type: ignore
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text('Выберите опцию:', reply_markup=reply_markup) # type: ignore
 
-async def handle_options(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    text = update.message.text # type: ignore
-    if text == "Тренировки":
-        await update.message.reply_text("Выбор тренировки") # type: ignore
-    elif text == "Учет рабочего времени":
-        await update.message.reply_text("Логика учета времени") # type: ignore
-    elif text == "Статистика по курсу доллара":
-        await update.message.reply_text("Запук расчета статистики по курсу") # type: ignore
-    elif text == "ФУНКЦИЯ":
-        pass
 
+# Кнопки
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()  # type: ignore
+
+    # WORKING HOURS
+    if query.data == 'working_hours': # type: ignore
+        await working_hours_buttons(query=query)
+    
+    elif query.data == 'last_event': # type: ignore
+        last_event = await get_today_last_event()
+        await query.edit_message_text(text=f"Последнее событие: {last_event.upper()}") # type: ignore
+    
+    elif query.data in ['start_work', 'end_work']: # type: ignore
+        await time_work_func(query.data) # type: ignore
+    
+    elif query.data == 'today_working': # type: ignore
+        working_hours, working_minuts = await get_today_working_hours()
+        await query.edit_message_text(text=f"Сегодня отработано: {working_hours}:{working_minuts}") # type: ignore
+    
+    # TRAINING
+    elif query.data == 'training': # type: ignore
+        await query.edit_message_text(text="Опция в разработке") # type: ignore
+
+# Запуск бота
 if __name__ == '__main__':
-    application = ApplicationBuilder().token(token=token).build()
+    try:
+        application = ApplicationBuilder().token(token).build()
 
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_options))
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CallbackQueryHandler(button))
 
-    application.run_polling()
+        application.run_polling()
+
+    except Exception as e:
+        write_log(message=str(e))
